@@ -1,0 +1,26 @@
+ 
+https://softwaremill.com/cats-effect-vs-zio/   Cats Effect vs ZIO
+
+https://softwaremill.com/practical-guide-to-error-handling-in-scala-cats-and-cats-effect/  A practical guide to error handling in Scala Cats and Cats Effect
+
+
+https://yadukrishnan.live/series/cats-effect   Series - Scala: Cats Effect
+
+https://yadukrishnan.live/cats-effect-3-for-beginners-part-1  Cats Effect 3 for Beginners [Part-1]
+
+https://yadukrishnan.live/common-apis-cats-effect-io-part-2   Common APIs: Cats Effect IO [Part-2]
+
+https://yadukrishnan.live/traversing-cats-effect-ios-part-3   Traversing Cats Effect IOs [Part-3]
+
+https://yadukrishnan.live/concurrent-execution-in-cats-effect-using-fibers   Concurrent Execution in Cats Effect using Fibers [Part 4]
+
+https://yadukrishnan.live/resource-handling-in-cats-effect-3-part-5          Resource Handling in Cats Effect 3 [Part 5]
+
+https://yadukrishnan.live/cancellation-of-iofiber-in-cats-effect-3-part-6    Cancellation of IO/Fiber in Cats Effect 3 [Part 6]
+
+https://yadukrishnan.live/synchronisation-and-concurrent-access-in-cats-effect-3-part-7    Synchronisation and Concurrent Access in Cats Effect 3 [Part 7]
+
+https://yadukrishnan.live/common-operators-in-cats-effect-3-part-8           Common Operators in Cats Effect 3 [Part-8]
+
+https://yadukrishnan.live/error-handling-in-cats-effect-part-9               Error Handling in Cats Effect [Part-9]
+

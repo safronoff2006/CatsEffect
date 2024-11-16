@@ -1,0 +1,9 @@
+*.bsp/
+*.idea/
+*/target/
+*/project/
+*mv.db
+*.log
+*target*
+
+
