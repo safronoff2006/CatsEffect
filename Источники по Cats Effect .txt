@@ -1,6 +1,9 @@
 https://typelevel.org/cats-effect/ Cats Effect  The pure asynchronous runtime for Scala
 
 
+https://github.com/inner-product/essential-effects-code  Essential Effects - Source code for examples and exercises
+
+
 https://softwaremill.com/cats-effect-vs-zio/   Cats Effect vs ZIO
 
 https://softwaremill.com/practical-guide-to-error-handling-in-scala-cats-and-cats-effect/  A practical guide to error handling in Scala Cats and Cats Effect
