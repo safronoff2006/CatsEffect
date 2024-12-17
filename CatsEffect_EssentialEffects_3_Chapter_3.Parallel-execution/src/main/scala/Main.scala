@@ -1,7 +1,7 @@
 
 
 
-import cats.effect.IO
+import cats.effect.{ExitCode, IO, IOApp}
 import cats.effect.unsafe.implicits.global
 
 import scala.language.postfixOps
@@ -9,6 +9,7 @@ import cats.implicits._
 
 import scala.concurrent._
 import scala.concurrent.duration._
+import utils.debug._
 
 
 object Main1 extends App {
@@ -306,12 +307,333 @@ object Main1 extends App {
 
       //Переписываем трансляцию между IO и IO.Par в терминах Parallel, который теперь у нас есть:
 
+      /*
+              val ia: IO[A] = IO(???)
+              val ib: IO[B] = IO(???)
 
+              def f(a: A, b: B): C = ???
+
+              - val ipa: IO.Par[A] = IO.Par(ia)
+              - val ipb: IO.Par[B] = IO.Par(ib)
+              + val ipa: IO.Par[A] = Parallel[IO].parallel(ia)
+              + val ipb: IO.Par[B] = Parallel[IO].parallel(ib)
+
+              val ipc: IO.Par[C] = (ipa, ipb).mapN(f)
+
+              - val ic: IO[C] = IO.Par.unwrap(ipc)
+              + val ic: IO[C] = Parallel[IO].sequential(ipc)
+      */
+
+      // Однако мы можем сделать лучше. Как только определен экземпляр класса параллельного типа,
+      // для последовательного типа становятся доступны версии функций с префиксом par,
+      // которые автоматически выполняют это преобразование, поэтому
+      // вы никогда не увидите изменения типа, лежащего в основе:
+
+      /*
+              val ia: IO[A] = IO(???)
+              val ib: IO[B] = IO(???)
+
+              def f(a: A, b: B): C = ???
+
+              - val ipa: IO.Par[A] = Parallel[IO].parallel(ia)
+              - val ipb: IO.Par[B] = Parallel[IO].parallel(ib)
+              -
+              - val ipc: IO.Par[C] = (ipa, ipb).mapN(f)
+              -
+              + val ic: IO[C] = Parallel[IO].sequential(ipc)
+              + val ic: IO[C] = (ia, ib).parMapN(f) 1
+      */
+
+      // 1 Обратите внимание на префикс par!
+
+      // parMapN преобразует аргументы ia и ib в значения IO.Par,
+      // композируя их параллельно с помощью IO.Par и mapN, и преобразует результаты обратно в IO.
+
+      // Посмотрите, сколько кода мы сэкономили, абстрагировавшись от этого общего шаблона!
+      // Диаграмма:
+      // resources/parMapN.png
+
+      // Метод расширения parMapN реализуется как
+      // (1) преобразование последовательных типов эффектов в параллельные представления,
+      // (2) выполнение альтернативной map и
+      // (3) преобразование параллельного представления обратно в последовательную форму.
+
+      // 3.3. Проверка параллелизма
+
+      // parMapN и другие методы, доступные в классе Parallel type, эффективно абстрагируют параллелизм,
+      // устраняя детали того, как на самом деле выполняются эти вычисления.
+      // Но когда мы учимся их использовать, как мы получаем представление о том, что выполняется и как?
+      // Самым простым решением было бы вывести что-либо на консоль во время выполнения.
+      // Мы знаем, что это побочный эффект, и мы знаем, что делать с побочными эффектами:
+      // обернуть их в IO!
+      // Мы создали вспомогательный метод debug, который добавим в наш код. Просто добавьте этот импорт:
+
+      /*
+
+      */
+
+      //Смотрите и запускайте пример DebugExample ниже
+
+      // Во время выполнения метод debug выведет имя текущего потока вместе со значением, полученным в результате эффекта
+      // (в виде строки, полученной при вызове toString):
+
+        // [io-compute-11] hello
+        // [io-compute-11] world
+        // [io-compute-11] hello world
+
+
+      // Выполнение действия seq с использованием map.
+      // Из названий потоков мы видим, что оно выполняется полностью в том же потоке.
+
+      // Исходный код для отладки очень прост — он создает новый эффект, который выводит значение
+      // данного эффекта на консоль вместе с названием текущего потока
+
+      // Мы используем другой вспомогательный инструмент, чтобы в терминале названия потоков были выделены
+      // красивыми цветами, чтобы сделать их более визуально различимыми.
+
+      println("------------")
+
+      // 3.4. parMapN
+
+      // parMapN - это параллельная версия метода applicative map. Он позволяет нам параллельно объединять
+      // несколько эффектов в один, указывая, как комбинировать выходные данные эффектов:
+
+      /*
+            val ia: IO[A] = IO(???)
+            val ib: IO[B] = IO(???)
+
+            def f(a: A, b: B): C = ???
+
+            val ic: IO[C] = (ia, ib).parMapN(f)
+      */
+
+      // mapN и parMapN воздействуют на кортежи любой арности, поэтому мы можем
+      // согласованно комбинировать любое количество эффектов.
+      // Например:
+
+      /*
+              (ia, ib).parMapN((a, b) => ???) 1
+
+              (ia, ib, ic).parMapN((a, b, c) => ???) 2
+
+              (ia, ib, ic, id).parMapN((a, b, c, d) => ???) 3
+
+              1 Two effects → one effect.
+              2 Three effects → one effect.
+              3 Four effects → one effect.
+      */
+
+      // Давайте создадим пример приложения, использующего parMapN, вместе с нашей отладкой,
+      // чтобы мы могли видеть, что происходит.
+
+      val hello2: IO[String] = IO("hello").debugio
+
+      val world2: IO[String] = IO("world").debugio
+
+      val par: IO[Unit] = (hello2, world2)
+                  .parMapN((h, w) => s"$h $w")
+                  .debugio
+                  .void
+
+      par.unsafeRunSync()
+
+      // 1 Мы отлаживаем каждое значение IO, которое будет выполняться (параллельно).
+      // 2 В предыдущем примере мы используем parMapN вместо mapN.
+      // 3 Мы также отлаживаем составленное значение IO. Как вы думаете, что будет напечатано?
+      //  Как вы думаете, в каком потоке он будет работать?
+
+      // Running the ParMapN program produces:
+        // [io-compute-7] hello
+        // [io-compute-6] world
+        // [io-compute-6] hello world
+
+      // Выполнение действия задач с помощью parMapN. Обратите внимание на различные используемые потоки!
+
+      // Порядок выполнения параллельных задач недетерминирован, поэтому при запуске программы вы можете увидеть,
+      // что hello и world выводятся в другом порядке.
+
+      println("--------------------")
+
+      // 3.4.1. поведение parMapN при наличии ошибок
+
+      // Вот программа, которая выводит выходные данные трех эффектов, составленных из parMapN,
+      // каждый из которых, представляет собой комбинацию эффектов успеха и неудачи.
+      // Что произойдет, если один (или более) из входных эффектов приведет к ошибке?
+      // Какое значение возвращается?
+      // Является ли оно детерминированным?
+
+      // Смотрите и запускайте пример ParMapNErrors ниже.
+
+      // Вызов attempt преобразует IO[A] в IO[Either[Throwable, A]],
+      // гарантируя, что эффект всегда будет успешным (но с оставленным значением, если он на самом деле не удался).
+      // Мы используем attempt, чтобы гарантировать, что наши эксперименты с ошибками не остановят программу.
+
+      // Running ParMapNErrors outputs:
+
+        // [io-compute-8] hi                                       1
+        // [io-compute-6] Left(java.lang.RuntimeException: oh!)    1
+        // [io-compute-6] ---
+        // [io-compute-6] hi                                       2
+        // [io-compute-8] Left(java.lang.RuntimeException: oh!)    2
+        // [io-compute-8] ---
+        // [io-compute-5] Left(java.lang.RuntimeException: oh!)    3
+
+      // Все три эффекта приводят к Left (отказу).
+
+      // Давайте сначала опишем, что должно быть верно для всех этих эффектов:
+      // результат parMapN завершится ошибкой, если какой—либо — хотя бы один - из эффектов завершится ошибкой.
+      // И мы видим, что на выходе получены три Left значения, соответствующие e1, e2 и e3.
+      // В то же время мы знаем, что каждый дополнительный эффект (ok, ko1, ko2) выполняется параллельно.
+
+      // Учитывая эти условия, для эффекта e1 мы видим результат ok, что означает , ч
+      // то ok сработал до ko1. Мы не видим результат ok от e2, поэтому можем предположить,
+      // что эффект e2 ko1 сработал первым.
+      // Как эффект e1 ok, так и эффект e2 ko1 являются первыми аргументами parMapN.
+      // Означает ли это, что крайние левые аргументы parMapN всегда будут выполняться первыми?
+      // Не обязательно! Рассмотрим, не следует ли отложить выполнение ko1 на время ожидания:
+
+      // Смотрите и запускайте пример ParMapNErrorsDelayed
+
+      // ParMapNErrorsDelayed then outputs:
+
+        // [io-compute-7] hi
+        // [io-compute-9] ko1
+        // [io-compute-9] Left(java.lang.RuntimeException: oh!)
+        // [io-compute-9] ---
+        // [io-compute-9] hi
+        // [io-compute-7] ko1
+        // [io-compute-7] Left(java.lang.RuntimeException: oh!)
+        // [io-compute-7] ---
+        // [io-compute-4] Left(java.lang.RuntimeException: noes!)
+
+      // 1 Мы отложили ko1, поэтому для e1 мы видим выходные данные ok и ko1 до того, как ko1 вызовет исключение.
+      // 2 Для e2, несмотря на то, что ko1 является первым аргументом parMapN, мы видим тот же результат, что и для e1.
+      // 3 Для e2 мы видим результат ko2, поскольку ko1 был отложен и, следовательно, выполнен после ko2.
+
+      // Что произойдет, если во время parMapN возникнут сбои? Первый сбой, который произойдет,
+      // используется как сбой созданного эффекта.
+
+      // 3.4.2. parTupled
+
+      // Код parMapN((_, _) => ()) выглядит немного некрасиво. С этим выражением мы делаем две вещи:
+
+      // 1. Независимо от того, каковы Результаты воздействия входных данных, мы хотим создать Unit.
+      // 2. Нам все равно, каковы будут два результата входных эффектов, мы “называем” их _, чтобы игнорировать их.
+
+      //Для достижения первой цели мы могли бы использовать комбинатор void, который определяется как
+      // map(_=> ()):
+
+      /*
+            - val e1 = (ok, ko1).parMapN(???).map(_ => ())
+            + val e1 = (ok, ko1).parMapN(???).void
+      */
+
+      // Но что мы можем использовать вместо ??? Самая простая функция, которую мы можем передать в map - функцию,
+      // которая делает пару:
+
+      /*
+            val e1 = (ok, ko1).parMapN((l, r) => (l, r)).void
+      */
+
+      // cats предоставляет функцию (par-)mapN, которая ничего не делает, кроме
+      // объединения входных данных в кортеж, называемую (par-)tupled:
+
+      /*
+      (ia, ib).parTupled 1
+      (ia, ib, ic).parTupled 2
+      (ia, ib, ic, id).parTupled 3
+                               ... 4
+
+      1 Two IO → one IO of a Tuple2: (IO[A], IO[B]) ⇒ IO[(A, B)]
+      2 Three IO → one IO of a Tuple3: (IO[A], IO[B], IO[C]) ⇒ IO[(A, B, C)]
+      3 Four IO → one IO of a Tuple4: (IO[A], IO[B], IO[C], IO[D]) ⇒ IO[(A, B, C, D)]
+      4 And so on.
+
+      */
+
+      // Таким образом, наши примеры обработки ошибок, приведенные выше, можно было бы записать:
+
+      /*
+          - val e1 = (ok, ko1).parMapN((l, r) => (l, r)).void
+          + val e1 = (ok, ko1).parTupled.void
+      */
+
+      // Смотрите и запускайте пример ParMapNErrorsParTupledVoid
     }
   }
 
   part1.chapter3
 
+}
+
+object DebugExample extends IOApp {
+
+  def run(args: List[String]): IO[ExitCode] = seq.as(ExitCode.Success)
+
+  // Uses debugio to add console output during execution.
+
+  private val hello: IO[String] = IO("hello").debugio
+  private val world: IO[String] = IO("world").debugio
+
+  private val seq: IO[String] =
+    (hello, world)
+      .mapN((h, w) => s"$h $w")
+      .debugio
+}
+
+
+object ParMapNErrors extends IOApp {
+  def run(args: List[String]): IO[ExitCode] =
+    e1.attempt.debugio *>
+    IO("---").debugio *>
+    e2.attempt.debugio *>
+    IO("---").debugio *>
+    e3.attempt.debugio *>
+    IO.pure(ExitCode.Success)
+
+  private val ok = IO("hi").debugio
+  private val ko1 = IO.raiseError[String](new RuntimeException("oh!")).debugio
+  private val ko2 = IO.raiseError[String](new RuntimeException("noes!")).debugio
+  private val e1 = (ok, ko1).parMapN((_, _) => ())
+  private val e2 = (ko1, ok).parMapN((_, _) => ())
+  private val e3 = (ko1, ko2).parMapN((_, _) => ())
 
 }
+
+object ParMapNErrorsDelayed extends IOApp {
+  def run(args: List[String]): IO[ExitCode] =
+    e1.attempt.debugio *>
+      IO("---").debugio *>
+      e2.attempt.debugio *>
+      IO("---").debugio *>
+      e3.attempt.debugio *>
+      IO.pure(ExitCode.Success)
+
+  private val ok = IO("hi").debugio
+  private val ko1 = IO.sleep(1.second).as("ko1").debugio *> IO.raiseError[String](new RuntimeException("oh!")).debugio
+  private val ko2 = IO.raiseError[String](new RuntimeException("noes!")).debugio
+  private val e1 = (ok, ko1).parMapN((_, _) => ())
+  private val e2 = (ko1, ok).parMapN((_, _) => ())
+  private val e3 = (ko1, ko2).parMapN((_, _) => ())
+
+}
+
+object ParMapNErrorsParTupledVoid extends IOApp {
+  def run(args: List[String]): IO[ExitCode] =
+    e1.attempt.debugio *>
+      IO("---").debugio *>
+      e2.attempt.debugio *>
+      IO("---").debugio *>
+      e3.attempt.debugio *>
+      IO.pure(ExitCode.Success)
+
+  private val ok = IO("hi").debugio
+  private val ko1 = IO.sleep(1.second).as("ko1").debugio *> IO.raiseError[String](new RuntimeException("oh!")).debugio
+  private val ko2 = IO.raiseError[String](new RuntimeException("noes!")).debugio
+  private val e1 = (ok, ko1).parTupled.void
+  private val e2 = (ko1, ok).parTupled.void
+  private val e3 = (ko1, ko2).parTupled.void
+
+}
+
 
