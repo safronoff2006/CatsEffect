@@ -559,6 +559,152 @@ object Main1 extends App {
       */
 
       // Смотрите и запускайте пример ParMapNErrorsParTupledVoid
+
+      // 3.5. parTraverse
+
+      // parTraverse - это параллельная версия traverse; обе версии имеют одинаковую сигнатуру типа:
+
+      /*
+              F[A] => (A => G[B]) => G[F[B]]
+      */
+
+      // Например, если F - это список, а G - это IO, то (par)traverse будет функцией от
+      // List[A] к IO[List[B]], если задана функция A => IO[B].
+
+      /*
+              List[A] => (A => IO[B]) => IO[List[B]]
+      */
+
+      // Наиболее распространенный вариант использования (par)traverse - это когда у вас есть набор работ,
+      // которые необходимо выполнить, и функция, которая обрабатывает одну единицу работы.
+      // Тогда вы получаете набор результатов, объединенных в один эффект:
+
+      sealed trait WorkUnit
+      case class Work(n: Int) extends WorkUnit
+
+      sealed trait Result
+      case class IntResult(n: Int) extends Result
+
+      val work: List[WorkUnit] = List(Work(1),Work(2), Work(3))
+      def doWork(workUnit: WorkUnit): IO[Result] = (workUnit match {
+        case Work(n) => IO(IntResult(n * n))
+        case _ => IO(IntResult(0))
+      }).debugio
+      val results: IO[List[Result]] = work.parTraverse(doWork)
+
+      results
+        .debugio
+        .void
+        .unsafeRunSync()
+
+      // Обратите внимание, что обработка одной единицы работы - это эффект, в данном случае IO.
+      // Давайте воспользуемся нашим отладочным комбинатором, чтобы лучше видеть выполнение при использовании parTraverse.
+
+      // Посмотрите ниже и выполните пример ParTraverse
+
+      // 1 Мы разбиваем задачи на части: каждый Int из задач преобразуется в IO[Int] с помощью метода task,
+      // и они выполняются параллельно.
+      // 2 Мы используем debug combinator для выполнения каждой задачи и для получения конечного результата.
+
+      // Запуск программы ParTraverse приводит к:
+
+        // [ioapp-compute-7] 7
+        // [ioapp-compute-0] 0
+        // [ioapp-compute-6] 6
+        // [ioapp-compute-1] 1
+        // [ioapp-compute-2] 2
+        // [ioapp-compute-5] 5
+        // [ioapp-compute-4] 4
+        // [ioapp-compute-3] 3
+        // [ioapp-compute-7] 8
+        // [ioapp-compute-3] 13
+        // ...
+        // [ioapp-compute-4] List(0, 1, 2, ... 98, 99)
+
+      // Если все результаты вычисляются параллельно, как создается List[B] результатов с помощью
+      // возвращаемого IO[List[B]]?
+      // Получение результата типа IO[List[B]] должно означать, что возвращаемый IO должен был
+      // собрать все результаты — List[B] — даже если каждый B был вычислен независимо.
+
+      // Необходимо дождаться, пока будут пройдены все элементы, но возвращаемый List[B] можно создавать постепенно,
+      // ожидая вычисления первого результата, затем добавляя второй результат, когда он будет вычислен, и так далее.
+
+      // При этом parTraverse на самом деле написан в терминах traverse, где он преобразует каждый ввод-вывод в IO.Par.
+      // Поскольку для прохождения требуется только, чтобы эффект имел Аппликативный экземпляр,
+      // Applicative[IO.Par] - это место, где “происходит” параллелизм.
+
+      // 3.5.1. Другой взгляд на parTraverse
+
+      // Вы также можете рассматривать (par)traverse как разновидность (paк)mapN, где результаты собираются,
+      // но где каждый выходной эффект имеет один и тот же тип выхода:
+
+      def f(i: Int): IO[Int] = IO(i)
+
+      val iol1 =             (f(1),f(2)).parMapN((a, b) => List(a, b))               // IO[List[Int]]     1
+      val iol2 =      (f(1), f(2), f(3)).parMapN((a, b, c) => List(a, b, c))         // IO[List[Int]]     2
+      val iol3 = (f(1), f(2), f(3),f(4)).parMapN((a, b, c, d) => List(a, b, c, d))   // IO[List[Int]]     3
+      val iol4 =        List(1, 2, 3, 4).parTraverse(f)                              // IO[List[Int]]     4
+
+      // 1 Мы вычисляем f(1), f(2) и собираем результаты в список.
+      // 2 Мы вычисляем f(1), f(2), f(3) и собираем результаты в список.
+      // 3 Мы вычисляем f(1), f(2), f(3), f(4) и собираем результаты в список.
+      // 4 Список(1, 2, 3, 4).parTraverse(f) тоже самое что
+      // (f(1), f(2), f(3), f(4)).parMapN(...).
+
+      // Обратите внимание, что тип возвращаемого значения для всех этих выражений один и тот же: IO[List[Int]].
+
+      // 3.6. parSequence
+
+      // (par)sequence выворачивает вложенную структуру “наизнанку”:
+
+     /*
+              F[G[A]] => G[F[A]]
+     */
+
+      // Например, если у вас есть список эффектов IO, parSequence параллельно преобразует
+      // его в один эффект IO, который создает список выходных данных:
+
+      /*
+              List[IO[A]] => IO[List[A]]
+      */
+
+      // Давайте посмотрим на parSequence в действии:
+      // Смотрите и запускайте пример ParSequence ниже
+
+      // 1 Мы используем parSequence для задач: каждый ввод-вывод задач выполняется параллельно.
+      // 2 Мы используем комбинатор отладки для каждого эффекта задачи и эффекта конечного результата.
+
+      // Running the ParSequence program produces:
+        // [ioapp-compute-2] 2
+        // [ioapp-compute-4] 4
+        // [ioapp-compute-1] 1
+        // [ioapp-compute-7] 7
+        // [ioapp-compute-3] 3
+        // [ioapp-compute-0] 0
+        // [ioapp-compute-2] 8
+        // [ioapp-compute-6] 6
+        // [ioapp-compute-1] 12
+        // ...
+        // [ioapp-compute-6] List(0, 1, 2, ... 98, 99)
+
+      // Обратите внимание, что sequence и traverse взаимозаменяемы:
+      //  x.sequence - это x.traverse(identity), а
+      //  x.traverse(f) - это x.map(f).sequence.
+
+      // 3.7. Резюме
+
+      // Сам по себе, IO не поддерживает параллельные операции, поскольку является монадой.
+      // 2. Тайп класс Parallel  определяет преобразование между парой типов эффектов:
+      // один из которых является монадой, а другой - “всего лишь” аппликативным функтором.
+      // 3. Parallel[IO] связывает эффект IO с его параллельным аналогом, IO.Par.
+      // 4. Параллельная структура IO требует возможности переноса вычислений в другие потоки в рамках текущего контекста выполнения.
+      // Именно так “реализуется” параллелизм.
+      // 5. parMapN, parTraverse, parSequence являются параллельными версиями (последовательного) map, traverse, and sequenc.
+      // Ошибки устраняются способом fail-fast.
+
+      // При проектировании систем fail-fast — это система,
+      // которая немедленно сообщает на своем интерфейсе о любом состоянии,
+      // которое может указывать на сбой.
     }
   }
 
@@ -636,4 +782,26 @@ object ParMapNErrorsParTupledVoid extends IOApp {
 
 }
 
+object ParTraverse extends IOApp {
+  def run(args: List[String]): IO[ExitCode] =
+    tasks
+      .parTraverse(task)
+      .debugio
+      .as(ExitCode.Success)
 
+  val numTasks = 100
+  val tasks: List[Int] = List.range(0, numTasks)
+
+  def task(id: Int): IO[Int] = IO(id).debugio
+}
+
+object ParSequence extends IOApp {
+  def run(args: List[String]): IO[ExitCode] =
+    tasks.parSequence
+    .debugio
+    .as(ExitCode.Success)
+  val numTasks = 100
+  val tasks: List[IO[Int]] = List.tabulate(numTasks)(task)
+
+  def task(id: Int): IO[Int] = IO(id).debugio
+}
