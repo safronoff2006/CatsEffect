@@ -512,6 +512,25 @@ object Main1 extends App {
       // перестанут выполняться из-за неявных или явных границ отмены.
       // 4. Мы можем запустить два вычисления наперегонки, чтобы узнать, кто закончил первым.
       // Эффекты более высокого порядка, такие как тайм-ауты, могут быть созданы с помощью гонок.
+
+
+      // Реализация myParMapN которая  написана выше - для Cats Effect 2, а для Cats Effect 3 она НЕ КОМПИЛИРУЕТСЯ
+      // потому что сигнатура метода join на файбере другая..
+      // Я (Валерий Сафронов) переписал реализацию myParMapN для Cats Effect 3, чтобы она компилировалась с Cats Effect 3.
+      // Unit тест я напишу несколько позже...и тогда порадую что не только уверен в корректности реализации, но и ОТТЕСТИРОВАЛ.
+
+      def myParMapN[A, B, C](ia: IO[A], ib: IO[B])(f: (A, B) => C): IO[C] =
+        IO.racePair(ia, ib).flatMap {
+          case Left((a, fb)) =>
+            val oA: IO[A] = a.embed( onCancel = throw new Exception("Прерван эффект ia"))
+            val oB: IO[B] = fb.join.flatMap ( joined => joined.embed( onCancel = throw new Exception("Прерван эффект ib") ))
+            (oA, oB).mapN(f)
+
+          case Right((fa, b)) =>
+            val oA: IO[A] = fa.join.flatMap(joined => joined.embed( onCancel = throw new Exception("Прерван эффект ia") ))
+            val ob: IO[B] = b.embed( onCancel = throw new Exception("Прерван эффект ib"))
+            (oA, ob).mapN(f)
+        }
     }
 
   }
@@ -584,3 +603,6 @@ object Timeout extends IOApp {
           IO(s"$name: done").debugio
         ).onCancel(IO(s"$name: cancelled").debugio.void).void
 }
+
+// К каждой из больших глав книги есть СНОСКИ,
+// Я их проанализирую и прокомментирую и как то дам ссылки на эти сноски в коде этих примеров...
